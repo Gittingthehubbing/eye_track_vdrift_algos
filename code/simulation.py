@@ -8,8 +8,13 @@ import numpy as np
 import eyekit
 import lorem
 import algorithms
+from classic_correction_algos import slice
 import core
-
+from tqdm.auto import tqdm
+import pandas as pd
+import os
+import pathlib as pl
+import json
 
 class ReadingScenario:
 
@@ -41,7 +46,9 @@ class ReadingScenario:
 				# because a one-word final line can be problematic for merge
 				# since it cannot create sequences with one fixation.
 				lines[-1] = 'lorem ' + lines[-1]
-		return eyekit.TextBlock(lines, position=(0, 0), font_face='Courier New', font_size=26.667, line_height=64.0)
+		font_size=round(26.667+(5*(1-np.random.rand())))
+		line_height=round(64.0+(10*(1-np.random.rand())))
+		return eyekit.TextBlock(lines, position=(font_size, font_size), font_face='Courier New', font_size=font_size, line_height=line_height,anchor="left")
 
 	def _generate_line_sequence(self, passage, line_i, partial_reading=False, inherited_line_y_for_shift=None):
 		x_margin, y_margin = passage.x_tl, passage.y_tl
@@ -133,17 +140,141 @@ def simulate_factor(factor, n_gradations, n_sims):
 		stdout.write('\n')
 	return results
 
+def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lines_per_passage=(8, 14), max_characters_per_line=(50,130), character_spacing=(10,18), line_spacing=(15,130)):
+	os.makedirs("data/saved_data",exist_ok=True)
+	_, (factor1_min, factor1_max) = core.factors[factor1]
+	_, (factor2_min, factor2_max) = core.factors[factor2]
+	# max_characters_per_line_choices = np.arange(max_characters_per_line[0],max_characters_per_line[1],1)
+	# character_spacing_choices = np.arange(character_spacing[0],character_spacing[1],1)
+	# line_spacing_choices = np.arange(line_spacing[0],line_spacing[1],1)
+	enum1 = np.linspace(factor2_min,factor2_max,num_sims)
+	enum2 = np.linspace(factor1_min,factor1_max,num_sims)
+	if num_sims > 4:
+		enum1 = enum1[3:]
+		enum2 = enum2[3:]
+	for factor_value2 in enum1:
+		for factor_value1 in enum2:
+			max_characters_per_line_choice = np.random.randint(max_characters_per_line[0],max_characters_per_line[1])
+			character_spacing_choice = np.random.randint(character_spacing[0],character_spacing[1])
+			line_spacing_choice = np.random.randint(line_spacing[0],line_spacing[1])
+			fname = f"{factor1}_{factor_value1:.3f}{factor2}_{factor_value2:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
+
+			reading_scenario = ReadingScenario(
+				**{factor1:factor_value1,factor2:factor_value2},
+				lines_per_passage=lines_per_passage,
+				max_characters_per_line=max_characters_per_line_choice,
+				character_spacing=character_spacing_choice,
+				line_spacing=line_spacing_choice
+			)
+			try:
+				passage, fixation_XY, intended_I = reading_scenario.simulate()
+				if len(fixation_XY)>500:
+					continue
+				average_duration = 80.0
+				fixation_times = []
+				for idx in range(len(fixation_XY)):
+					if idx == 0:
+						t_start = 10
+					else:
+						t_start = t_end
+					t_end = np.round(t_start + (np.random.rand()+1.)*average_duration,1)
+					fixation_times.append(dict(start=t_start,end=t_end))
+				fixation_times = pd.DataFrame(fixation_times)
+				# fixation_times = pd.DataFrame([dict(start=t,end=t+average_duration) for t in np.arange(10,average_duration*len(fixation_XY),average_duration)])
+				# random_vec = np.random.randn(len(fixation_XY))
+				# fixation_times = fixation_times * random_vec
+				corrected_fix_y_vals = slice(fixation_XY,passage.midlines,passage.line_height)
+				corrected_line_nums = [passage.midlines.index(y) for y in corrected_fix_y_vals]
+
+				pupil_sizes = pd.DataFrame([dict(pupil_size=np.random.randn()) for _ in range(len(fixation_XY))])
+				pupil_sizes = pupil_sizes.applymap(lambda x: round(abs(x) * 721.0,2)) 
+				fix_df = pd.DataFrame([{
+					"x":fixation_XY[idx][0],
+					"y":fixation_XY[idx][1],
+					"assigned_line":intended_I[idx],
+					"y_midline":passage.midlines[intended_I[idx]],
+					"corrected_start_time":fixation_times.start.values[idx],
+					"corrected_end_time":fixation_times.end.values[idx],
+					"pupil_size":pupil_sizes.pupil_size.values[idx],
+					"x_eyekit":fixation_XY[idx][0],
+					"y_eyekit":corrected_fix_y_vals[idx],
+					"line_num_eyekit":corrected_line_nums[idx],
+				} for idx in range(len(fixation_XY))])
+
+						
+				trial = dict(
+					filename = str(fname),
+					y_midline = passage.midlines,
+					y_char_unique = passage.midlines,
+					num_char_lines = passage.n_lines,
+					y_diff=passage.line_height,
+					trial_id=fname,
+					text = passage.text,
+					display_coords = passage.box,
+					font_size = passage.font_size,
+					font= passage.font_face,
+					line_heights = passage.line_height,
+					chars_list= [
+						{
+							"char_xmin" : x.x_tl,
+							"char_ymin" : x.y_tl,
+							"char_xmax" : x.x_br,
+							"char_ymax" : x.y_br,
+							"char_x_center" : x.x,
+							"char_y_center" : x.y,
+							"char":x.display_text,
+							"assigned_line": passage.midlines.index(x.y)
+						} for x in passage.characters(alphabetical_only=False)
+					]
+				)
+				# fix_df.to_csv(f"{savedir}/fixations_{fname}.csv")
+				fix_df.to_csv(f"{savedir}/{fname}_fixations.csv")
+				
+				with open(f"{savedir}/{fname}_trial.json",'w') as f:
+					json_string = json.dumps(trial,indent=4)
+					f.write(json_string)
+				# eyekit.io.save(passage,f"{savedir}/passage_{fname}.json")
+			except Exception as e:
+				print(e)
+		print(factor1," Done")
+	print(factor2," Done")
+
 
 if __name__ == '__main__':
 
-	import argparse
-	parser = argparse.ArgumentParser()
-	parser.add_argument('factor', action='store', type=str, help='factor to simulate')
-	parser.add_argument('output_dir', action='store', type=str, help='directory to write results to')
-	parser.add_argument('--n_gradations', action='store', type=int, default=50, help='number of gradations in factor')
-	parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
-	args = parser.parse_args()
+	# import argparse
+	# parser = argparse.ArgumentParser()
+	# parser.add_argument('factor', action='store', type=str, help='factor to simulate')
+	# parser.add_argument('output_dir', action='store', type=str, help='directory to write results to')
+	# parser.add_argument('--n_gradations', action='store', type=int, default=50, help='number of gradations in factor')
+	# parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
+	# args = parser.parse_args()
 
-	results = simulate_factor(args.factor, args.n_gradations, args.n_sims)
-	with open('%s/%s.pkl' % (args.output_dir, args.factor), mode='wb') as file:
-		pickle.dump(results, file)
+	factor = "noise"
+	n_gradations = 4
+	n_sims = 1
+	lines_per_passage = (12,14)
+	drive = ["/media/fssd","F:/"][0]
+	output_dir = f"{drive}/pydata/Eye_Tracking/Simulation_data2"
+	pl.Path(output_dir).mkdir(exist_ok=True)
+	do_save_sim_data = True
+	do_sim_correction = False
+	factors_available = list(core.factors.keys())
+	factors_available.remove("slope")
+	print(f"Running factors {factors_available}")
+	if do_save_sim_data:
+		for factor2_idx,_ in tqdm(enumerate(factors_available),desc="outer"):
+
+			for factor1 in tqdm(factors_available,desc=f"Factor {factors_available[factor2_idx]}"):
+				factor2 = factors_available[factor2_idx]
+				if factor2 == factor1:
+					if factor2_idx == len(factors_available)-1:
+						factor2 = factors_available[factor2_idx-1]
+					else:
+						factor2 = factors_available[factor2_idx+1]
+				save_sim_data(factor1,factor2,n_sims,savedir=output_dir,lines_per_passage=lines_per_passage)
+
+	if do_sim_correction:
+		results = simulate_factor(factor, n_gradations, n_sims)
+		with open('%s/%s.pkl' % (output_dir, factor), mode='wb') as file:
+			pickle.dump(results, file)
