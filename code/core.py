@@ -1,7 +1,7 @@
 from os.path import splitext
 from pathlib import Path
 import re
-import cairosvg
+# import cairosvg
 
 # Paths to common directories
 ROOT = Path(__file__).parent.parent
@@ -73,17 +73,17 @@ def format_svg_labels(svg_file_path, monospace=[], arbitrary_replacements={}):
 	with open(svg_file_path, mode='w', encoding='utf-8') as file:
 		file.write(svg)
 
-def convert_svg(svg_file_path, out_file_path):
-	'''
-	Convert an SVG file into PDF, EPS, or PNG. This function is essentially a
-	wrapper around CairoSVG.
-	'''
-	_, extension = splitext(out_file_path)
-	if extension == '.pdf':
-		cairosvg.svg2pdf(url=svg_file_path, write_to=out_file_path)
-	elif extension == '.eps':
-		cairosvg.svg2eps(url=svg_file_path, write_to=out_file_path)
-	elif extension == '.png':
-		cairosvg.svg2png(url=svg_file_path, write_to=out_file_path)
-	else:
-		raise ValueError('Cannot save to this format. Use either .pdf, .eps, or .png')
+# def convert_svg(svg_file_path, out_file_path):
+# 	'''
+# 	Convert an SVG file into PDF, EPS, or PNG. This function is essentially a
+# 	wrapper around CairoSVG.
+# 	'''
+# 	_, extension = splitext(out_file_path)
+# 	if extension == '.pdf':
+# 		cairosvg.svg2pdf(url=svg_file_path, write_to=out_file_path)
+# 	elif extension == '.eps':
+# 		cairosvg.svg2eps(url=svg_file_path, write_to=out_file_path)
+# 	elif extension == '.png':
+# 		cairosvg.svg2png(url=svg_file_path, write_to=out_file_path)
+# 	else:
+# 		raise ValueError('Cannot save to this format. Use either .pdf, .eps, or .png')
