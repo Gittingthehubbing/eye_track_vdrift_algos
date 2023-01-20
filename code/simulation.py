@@ -39,6 +39,9 @@ class ReadingScenario:
 			for word in lorem.sentence().split():
 				if (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
 					lines[-1] += word + ' '
+				elif len(lines) == n_lines//2 and np.random.rand() > 0.75:
+					lines.append(' ')
+					lines.append(word + ' ')
 				else:
 					lines.append(word + ' ')
 			if len(lines) == n_lines and len(lines[-1].split()) == 1:
@@ -150,8 +153,10 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 	enum1 = np.linspace(factor2_min,factor2_max,num_sims)
 	enum2 = np.linspace(factor1_min,factor1_max,num_sims)
 	if num_sims > 4:
-		enum1 = enum1[3:]
-		enum2 = enum2[3:]
+		if enum1[0] == 0:
+			enum1 = enum1[3:]
+		if enum2[0] == 0:
+			enum2 = enum2[3:]
 	for factor_value2 in enum1:
 		for factor_value1 in enum2:
 			max_characters_per_line_choice = np.random.randint(max_characters_per_line[0],max_characters_per_line[1])
@@ -225,6 +230,18 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 							"char":x.display_text,
 							"assigned_line": passage.midlines.index(x.y)
 						} for x in passage.characters(alphabetical_only=False)
+					],
+					words_list= [
+						{
+							"word_xmin" : x.x_tl,
+							"word_ymin" : x.y_tl,
+							"word_xmax" : x.x_br,
+							"word_ymax" : x.y_br,
+							"word_x_center" : x.x,
+							"word_y_center" : x.y,
+							"word":x.display_text,
+							"assigned_line": passage.midlines.index(x.y)
+						} for x in passage.words(alphabetical_only=False)
 					]
 				)
 				# fix_df.to_csv(f"{savedir}/fixations_{fname}.csv")
@@ -252,7 +269,7 @@ if __name__ == '__main__':
 
 	factor = "noise"
 	n_gradations = 4
-	n_sims = 1
+	n_sims = 10
 	lines_per_passage = (12,14)
 	drive = ["/media/fssd","F:/"][0]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Simulation_data2"
