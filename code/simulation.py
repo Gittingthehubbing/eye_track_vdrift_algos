@@ -152,7 +152,10 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 	# line_spacing_choices = np.arange(line_spacing[0],line_spacing[1],1)
 	enum1 = np.linspace(factor2_min,factor2_max,num_sims)
 	enum2 = np.linspace(factor1_min,factor1_max,num_sims)
-	if num_sims > 4:
+	if factor1 == factor2:
+		enum2 = [0]
+		factor2 = ''
+	if num_sims > 4 and factor2 != '':
 		if enum1[0] == 0:
 			enum1 = enum1[3:]
 		if enum2[0] == 0:
@@ -162,10 +165,15 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 			max_characters_per_line_choice = np.random.randint(max_characters_per_line[0],max_characters_per_line[1])
 			character_spacing_choice = np.random.randint(character_spacing[0],character_spacing[1])
 			line_spacing_choice = np.random.randint(line_spacing[0],line_spacing[1])
-			fname = f"{factor1}_{factor_value1:.3f}{factor2}_{factor_value2:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
 
+			if factor2 == '':
+				fname = f"{factor1}_{factor_value1:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
+				factor_dict = {factor1:factor_value1}
+			else:
+				fname = f"{factor1}_{factor_value1:.3f}{factor2}_{factor_value2:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
+				factor_dict = {factor1:factor_value1,factor2:factor_value2}
 			reading_scenario = ReadingScenario(
-				**{factor1:factor_value1,factor2:factor_value2},
+				**factor_dict,
 				lines_per_passage=lines_per_passage,
 				max_characters_per_line=max_characters_per_line_choice,
 				character_spacing=character_spacing_choice,
@@ -253,8 +261,8 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 				# eyekit.io.save(passage,f"{savedir}/passage_{fname}.json")
 			except Exception as e:
 				print(e)
-		print(factor1," Done")
-	print(factor2," Done")
+		# print(factor1," Done")
+	# print(factor2," Done")
 
 
 if __name__ == '__main__':
@@ -267,17 +275,21 @@ if __name__ == '__main__':
 	# parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
 	# args = parser.parse_args()
 
-	factor = "noise"
+	factor = "regression_between"
 	n_gradations = 4
-	n_sims = 10
+	n_sims = 1000
 	lines_per_passage = (12,14)
 	drive = ["/media/fssd","F:/"][0]
-	output_dir = f"{drive}/pydata/Eye_Tracking/Simulation_data2"
+	output_dir = f"{drive}/pydata/Eye_Tracking/Simulation_data_{factor}/processed_data"
+	pl.Path(output_dir).parent.mkdir(exist_ok=True)
 	pl.Path(output_dir).mkdir(exist_ok=True)
 	do_save_sim_data = True
 	do_sim_correction = False
 	factors_available = list(core.factors.keys())
+	print(f"Factors available {factors_available}")
+	#['noise', 'slope', 'shift', 'regression_within', 'regression_between']
 	factors_available.remove("slope")
+	factors_available = [factor]
 	print(f"Running factors {factors_available}")
 	if do_save_sim_data:
 		for factor2_idx,_ in tqdm(enumerate(factors_available),desc="outer"):
