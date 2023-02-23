@@ -35,13 +35,23 @@ class ReadingScenario:
 	def _generate_passage(self):
 		n_lines = np.random.randint(self.min_lines, self.max_lines+1)
 		lines = ['']
+		has_paragraph_gap = False
 		while len(lines) < n_lines:
 			for word in lorem.sentence().split():
 				if (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
 					lines[-1] += word + ' '
-				elif len(lines) == n_lines//2 and np.random.rand() > 0.75:
+				elif len(lines) == n_lines//2 and np.random.rand() > 0.75 and not has_paragraph_gap:
 					lines.append(' ')
 					lines.append(word + ' ')
+					has_paragraph_gap = True
+				elif len(lines) > 2 and np.random.rand() > 0.8 and not has_paragraph_gap:
+					lines.append(' ')
+					lines.append(word + ' ')
+					has_paragraph_gap = True
+					if np.random.rand() > 0.7:
+						words_last_line = lines[-1].split(' ')
+						keep_len = max(int(len(words_last_line) * np.random.rand()),2)
+						lines[-1] = ' '.join(words_last_line[:keep_len])
 				else:
 					lines.append(word + ' ')
 			if len(lines) == n_lines and len(lines[-1].split()) == 1:
@@ -275,11 +285,11 @@ if __name__ == '__main__':
 	# parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
 	# args = parser.parse_args()
 
-	factor = "regression_between"
+	factor = "all"
 	n_gradations = 4
-	n_sims = 1000
+	n_sims = 2
 	lines_per_passage = (12,14)
-	drive = ["/media/fssd","F:/"][0]
+	drive = ["/media/fssd","F:/","../.."][-1]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Simulation_data_{factor}/processed_data"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
 	pl.Path(output_dir).mkdir(exist_ok=True)
@@ -289,7 +299,7 @@ if __name__ == '__main__':
 	print(f"Factors available {factors_available}")
 	#['noise', 'slope', 'shift', 'regression_within', 'regression_between']
 	factors_available.remove("slope")
-	factors_available = [factor]
+	# factors_available = [factor]
 	print(f"Running factors {factors_available}")
 	if do_save_sim_data:
 		for factor2_idx,_ in tqdm(enumerate(factors_available),desc="outer"):
