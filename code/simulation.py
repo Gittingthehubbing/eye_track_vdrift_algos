@@ -9,16 +9,24 @@ import eyekit
 import lorem
 import algorithms
 from classic_correction_algos import slice
-import core
+# import core
 from tqdm.auto import tqdm
 import pandas as pd
 import os
 import pathlib as pl
 import json
+from PIL import Image
+
+FACTORS = {'noise':('Noise distortion', (0, 40)),
+           'slope':('Slope distortion', (-0.1, 0.1)),
+           'shift':('Shift distortion', (-0.2, 0.2)),
+           'regression_within':('Probability of within-line regression', (0, 1)),
+           'regression_between':('Probability of between-line regression', (0, 1))}
+ALGORITHMS = ['attach', 'chain', 'cluster', 'compare', 'merge', 'regress', 'segment', 'slice', 'split', 'stretch', 'warp']
 
 class ReadingScenario:
 
-	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64):
+	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64,include_line_breaks=False):
 		# Distortion parameters
 		self.noise = noise
 		self.slope = slope
@@ -31,6 +39,7 @@ class ReadingScenario:
 		self.max_characters_per_line = max_characters_per_line
 		self.character_spacing = character_spacing
 		self.line_spacing = line_spacing
+		self.include_line_breaks = include_line_breaks
 
 	def _generate_passage(self):
 		n_lines = np.random.randint(self.min_lines, self.max_lines+1)
@@ -40,11 +49,11 @@ class ReadingScenario:
 			for word in lorem.sentence().split():
 				if (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
 					lines[-1] += word + ' '
-				elif len(lines) == n_lines//2 and np.random.rand() > 0.75 and not has_paragraph_gap:
+				elif self.include_line_breaks and len(lines) == n_lines//2 and np.random.rand() > 0.75 and not has_paragraph_gap:
 					lines.append(' ')
 					lines.append(word + ' ')
 					has_paragraph_gap = True
-				elif len(lines) > 2 and np.random.rand() > 0.8 and not has_paragraph_gap:
+				elif self.include_line_breaks and len(lines) > 1 and np.random.rand() > 0.8 and not has_paragraph_gap:
 					lines.append(' ')
 					lines.append(word + ' ')
 					has_paragraph_gap = True
@@ -135,14 +144,14 @@ def simulate_factor(factor, n_gradations, n_sims):
 	and corrected by each algorithm. Results are returned as a 3D numpy
 	array.
 	'''
-	results = np.zeros((len(core.algorithms), n_gradations, n_sims), dtype=float)
-	_, (factor_min, factor_max) = core.factors[factor]
+	results = np.zeros((len(ALGORITHMS), n_gradations, n_sims), dtype=float)
+	_, (factor_min, factor_max) = FACTORS[factor]
 	for gradation_i, factor_value in enumerate(np.linspace(factor_min, factor_max, n_gradations)):
 		print('%s = %f' % (factor, factor_value))
 		reading_scenario = ReadingScenario(**{factor:factor_value})
 		for sim_i in range(n_sims):
 			passage, fixation_XY, intended_I = reading_scenario.simulate()
-			for method_i, method in enumerate(core.algorithms):
+			for method_i, method in enumerate(ALGORITHMS):
 				corrected_I = algorithms.correct_drift(method, fixation_XY, passage, return_line_assignments=True)
 				matches = intended_I == corrected_I
 				results[method_i][gradation_i][sim_i] = sum(matches) / len(matches)
@@ -153,10 +162,40 @@ def simulate_factor(factor, n_gradations, n_sims):
 		stdout.write('\n')
 	return results
 
-def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lines_per_passage=(8, 14), max_characters_per_line=(50,130), character_spacing=(10,18), line_spacing=(15,130)):
+def eyekit_plot(fix_df,passage,savename):
+
+	fixations_tuples = [
+		(x[1]["x"],x[1]["y"],x[1]["corrected_start_time"],x[1]["corrected_end_time"]) 
+		if x[1]["corrected_start_time"] < x[1]["corrected_end_time"] 
+		else (x[1]["x"],x[1]["y"],x[1]["corrected_start_time"],x[1]["corrected_end_time"]+1)  for x in fix_df.iterrows()
+	]					
+	seq = eyekit.FixationSequence(fixations_tuples)
+
+	box = passage.box
+	img = eyekit.vis.Image(box[2]+box[0], box[3]+box[1])
+	img.draw_text_block(passage)
+	img.draw_fixation_sequence(seq)
+	img.save(f'{savename}.png')
+	im = Image.open(f'{savename}.png')
+	im = im.resize((1024//2,768//2))
+	im.save(f'{savename}.png')
+	return 0
+
+def save_sim_data(
+		factor1,factor2,num_sims:int = 1,
+		savedir="data/saved_data",
+		lines_per_passage=(8, 14), 
+		max_characters_per_line=(50,130), 
+		character_spacing=(10,18), 
+		line_spacing=(15,130),
+		include_line_breaks=False,
+		always_apply_small_noise=False,
+		max_num_fixations=500,
+		do_eyekit_plot=False,
+):
 	os.makedirs("data/saved_data",exist_ok=True)
-	_, (factor1_min, factor1_max) = core.factors[factor1]
-	_, (factor2_min, factor2_max) = core.factors[factor2]
+	_, (factor1_min, factor1_max) = FACTORS[factor1]
+	_, (factor2_min, factor2_max) = FACTORS[factor2]
 	# max_characters_per_line_choices = np.arange(max_characters_per_line[0],max_characters_per_line[1],1)
 	# character_spacing_choices = np.arange(character_spacing[0],character_spacing[1],1)
 	# line_spacing_choices = np.arange(line_spacing[0],line_spacing[1],1)
@@ -166,10 +205,15 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 		enum2 = [0]
 		factor2 = ''
 	if num_sims > 4 and factor2 != '':
-		if enum1[0] == 0:
+		if enum1[0] == 0 and factor2 not in ["regression_within","regression_between"]:
 			enum1 = enum1[3:]
-		if enum2[0] == 0:
+		if enum2[0] == 0 and factor1 not in ["regression_within","regression_between"]:
 			enum2 = enum2[3:]
+		if factor1 not in ["regression_within","regression_between"]:
+			enum2 = enum2[enum2 != 0]
+		if factor2 not in ["regression_within","regression_between"]:
+			enum1 = enum1[enum1 != 0]
+
 	for factor_value2 in enum1:
 		for factor_value1 in enum2:
 			max_characters_per_line_choice = np.random.randint(max_characters_per_line[0],max_characters_per_line[1])
@@ -182,16 +226,22 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 			else:
 				fname = f"{factor1}_{factor_value1:.3f}{factor2}_{factor_value2:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
 				factor_dict = {factor1:factor_value1,factor2:factor_value2}
+			if always_apply_small_noise and 'noise' not in factor_dict:
+				factor_dict['noise'] = 6
+			elif 'noise' in factor_dict and factor_dict['noise'] < 6:
+				factor_dict['noise'] = 6
+
 			reading_scenario = ReadingScenario(
 				**factor_dict,
 				lines_per_passage=lines_per_passage,
 				max_characters_per_line=max_characters_per_line_choice,
 				character_spacing=character_spacing_choice,
-				line_spacing=line_spacing_choice
+				line_spacing=line_spacing_choice,
+				include_line_breaks=include_line_breaks
 			)
 			try:
 				passage, fixation_XY, intended_I = reading_scenario.simulate()
-				if len(fixation_XY)>500:
+				if len(fixation_XY)>max_num_fixations:
 					continue
 				average_duration = 80.0
 				fixation_times = []
@@ -224,7 +274,9 @@ def save_sim_data(factor1,factor2,num_sims:int = 1,savedir="data/saved_data",lin
 					"line_num_eyekit":corrected_line_nums[idx],
 				} for idx in range(len(fixation_XY))])
 
-						
+				if do_eyekit_plot:
+					eyekit_plot(fix_df,passage,pl.Path(output_dir).parent.joinpath("plots").joinpath(f"eyekitPlot_{fname}"))
+
 				trial = dict(
 					filename = str(fname),
 					y_midline = passage.midlines,
@@ -285,17 +337,20 @@ if __name__ == '__main__':
 	# parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
 	# args = parser.parse_args()
 
-	factor = "all"
+	factor = "all_no_line_breaks_alwaysNoise"
 	n_gradations = 4
-	n_sims = 2
+	n_sims = 10
 	lines_per_passage = (12,14)
-	drive = ["/media/fssd","F:/","../.."][-1]
-	output_dir = f"{drive}/pydata/Eye_Tracking/Simulation_data_{factor}/processed_data"
+	include_line_breaks = False
+	always_apply_small_noise = True
+	drive = ["/media/fssd","F:/","../.."][0]
+	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
+	pl.Path(output_dir).parent.joinpath("plots").mkdir(exist_ok=True)
 	pl.Path(output_dir).mkdir(exist_ok=True)
 	do_save_sim_data = True
 	do_sim_correction = False
-	factors_available = list(core.factors.keys())
+	factors_available = list(FACTORS.keys())
 	print(f"Factors available {factors_available}")
 	#['noise', 'slope', 'shift', 'regression_within', 'regression_between']
 	factors_available.remove("slope")
@@ -311,7 +366,15 @@ if __name__ == '__main__':
 						factor2 = factors_available[factor2_idx-1]
 					else:
 						factor2 = factors_available[factor2_idx+1]
-				save_sim_data(factor1,factor2,n_sims,savedir=output_dir,lines_per_passage=lines_per_passage)
+				save_sim_data(
+					factor1,
+					factor2,
+					n_sims,
+					savedir=output_dir,
+					lines_per_passage=lines_per_passage,
+					include_line_breaks=include_line_breaks,
+					always_apply_small_noise=always_apply_small_noise
+				)
 
 	if do_sim_correction:
 		results = simulate_factor(factor, n_gradations, n_sims)
