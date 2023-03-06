@@ -26,7 +26,7 @@ ALGORITHMS = ['attach', 'chain', 'cluster', 'compare', 'merge', 'regress', 'segm
 
 class ReadingScenario:
 
-	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64,include_line_breaks=False):
+	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64,include_line_breaks=False,text:str=None):
 		# Distortion parameters
 		self.noise = noise
 		self.slope = slope
@@ -40,13 +40,22 @@ class ReadingScenario:
 		self.character_spacing = character_spacing
 		self.line_spacing = line_spacing
 		self.include_line_breaks = include_line_breaks
+		if text is not None:
+			self.text = text
 
 	def _generate_passage(self):
 		n_lines = np.random.randint(self.min_lines, self.max_lines+1)
 		lines = ['']
 		has_paragraph_gap = False
 		while len(lines) < n_lines:
-			for word in lorem.sentence().split():
+			# for word in lorem.sentence().split():
+			if self.text is None:
+				words = lorem.sentence().split()
+			else:
+				words = self.text.split(" ")
+			for word in words:
+				if len(lines) > n_lines:
+					break
 				if (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
 					lines[-1] += word + ' '
 				elif self.include_line_breaks and len(lines) == n_lines//2 and np.random.rand() > 0.75 and not has_paragraph_gap:
@@ -67,7 +76,8 @@ class ReadingScenario:
 				# Final line only contains one word, so add in an extra word
 				# because a one-word final line can be problematic for merge
 				# since it cannot create sequences with one fixation.
-				lines[-1] = 'lorem ' + lines[-1]
+				w = words[np.random.randint(1,len(words)+1)]
+				lines[-1] = f'{w} ' + lines[-1]
 		font_size=round(26.667+(5*(1-np.random.rand())))
 		line_height=round(64.0+(10*(1-np.random.rand())))
 		return eyekit.TextBlock(lines, position=(font_size, font_size), font_face='Courier New', font_size=font_size, line_height=line_height,anchor="left")
@@ -192,6 +202,8 @@ def save_sim_data(
 		always_apply_small_noise=False,
 		max_num_fixations=500,
 		do_eyekit_plot=False,
+		texts:str=None,
+		text_num=0
 ):
 	os.makedirs("data/saved_data",exist_ok=True)
 	_, (factor1_min, factor1_max) = FACTORS[factor1]
@@ -237,7 +249,8 @@ def save_sim_data(
 				max_characters_per_line=max_characters_per_line_choice,
 				character_spacing=character_spacing_choice,
 				line_spacing=line_spacing_choice,
-				include_line_breaks=include_line_breaks
+				include_line_breaks=include_line_breaks,
+				text=texts[text_num]
 			)
 			try:
 				passage, fixation_XY, intended_I = reading_scenario.simulate()
@@ -323,9 +336,12 @@ def save_sim_data(
 				# eyekit.io.save(passage,f"{savedir}/passage_{fname}.json")
 			except Exception as e:
 				print(e)
+			text_num += 1
+			if text_num == len(texts) -1:
+				text_num = 0
 		# print(factor1," Done")
 	# print(factor2," Done")
-
+	return text_num
 
 if __name__ == '__main__':
 
@@ -337,18 +353,20 @@ if __name__ == '__main__':
 	# parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
 	# args = parser.parse_args()
 
-	factor = "all_no_line_breaks_alwaysNoise"
+	factor = "all_noLineBreaks_alwaysNoise_wikitext"
 	n_gradations = 4
-	n_sims = 10
+	n_sims = 25
 	lines_per_passage = (12,14)
 	include_line_breaks = False
 	always_apply_small_noise = True
 	drive = ["/media/fssd","F:/","../.."][0]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
+	text_source = f"{drive}/pydata/Text_Data_General/wikitext-2/wiki.train.tokens"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
 	pl.Path(output_dir).parent.joinpath("plots").mkdir(exist_ok=True)
 	pl.Path(output_dir).mkdir(exist_ok=True)
 	do_save_sim_data = True
+	do_eyekit_plot = False
 	do_sim_correction = False
 	factors_available = list(FACTORS.keys())
 	print(f"Factors available {factors_available}")
@@ -356,6 +374,15 @@ if __name__ == '__main__':
 	factors_available.remove("slope")
 	# factors_available = [factor]
 	print(f"Running factors {factors_available}")
+
+	with open(text_source,"r") as f:
+		text = f.read()
+	texts = text.split("\n \n ")
+	texts = [x.replace(" .",".").replace("<unk>","").replace("\n","").replace("@-@ ","-").replace("@.@ ",".").replace("@,@ ",",") for x in texts if len(x)>100 and "= =" not in x and "Note :" not in x]
+	texts = [x.encode('ascii',errors='ignore').decode() for x in texts]
+	# txt_indeces = np.arange(len(texts))
+	# np.random.shuffle(txt_indeces)
+	text_num = 0
 	if do_save_sim_data:
 		for factor2_idx,_ in tqdm(enumerate(factors_available),desc="outer"):
 
@@ -366,14 +393,18 @@ if __name__ == '__main__':
 						factor2 = factors_available[factor2_idx-1]
 					else:
 						factor2 = factors_available[factor2_idx+1]
-				save_sim_data(
+				
+				text_num = save_sim_data(
 					factor1,
 					factor2,
 					n_sims,
 					savedir=output_dir,
 					lines_per_passage=lines_per_passage,
 					include_line_breaks=include_line_breaks,
-					always_apply_small_noise=always_apply_small_noise
+					always_apply_small_noise=always_apply_small_noise,
+					texts=texts,
+					do_eyekit_plot=do_eyekit_plot,
+					text_num=text_num
 				)
 
 	if do_sim_correction:
