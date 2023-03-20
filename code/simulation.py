@@ -6,7 +6,6 @@ from sys import stdout
 import pickle
 import numpy as np
 import eyekit
-import lorem
 import algorithms
 from classic_correction_algos import slice
 # import core
@@ -47,26 +46,30 @@ class ReadingScenario:
 		n_lines = np.random.randint(self.min_lines, self.max_lines+1)
 		lines = ['']
 		has_paragraph_gap = False
+		add_short_sentences = True if np.random.rand() < 0.25 else False
 		while len(lines) < n_lines:
 			# for word in lorem.sentence().split():
 			if self.text is None:
+				import lorem
 				words = lorem.sentence().split()
 			else:
 				words = self.text.split(" ")
 			for word in words:
 				if len(lines) > n_lines:
 					break
-				if (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
+				if add_short_sentences and len(lines[-1]) > 0 and np.random.rand() < 0.01:
+					lines.append(word + ' ')
+				elif (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
 					lines[-1] += word + ' '
-				elif self.include_line_breaks and len(lines) == n_lines//2 and np.random.rand() > 0.75 and not has_paragraph_gap:
+				elif self.include_line_breaks and len(lines) == n_lines//2 and np.random.rand() < 0.25 and not has_paragraph_gap:
 					lines.append(' ')
 					lines.append(word + ' ')
 					has_paragraph_gap = True
-				elif self.include_line_breaks and len(lines) > 1 and np.random.rand() > 0.8 and not has_paragraph_gap:
+				elif self.include_line_breaks and len(lines) > 1 and np.random.rand() < 0.2 and not has_paragraph_gap:
 					lines.append(' ')
 					lines.append(word + ' ')
 					has_paragraph_gap = True
-					if np.random.rand() > 0.7:
+					if np.random.rand() < 0.3:
 						words_last_line = lines[-1].split(' ')
 						keep_len = max(int(len(words_last_line) * np.random.rand()),2)
 						lines[-1] = ' '.join(words_last_line[:keep_len])
@@ -327,7 +330,6 @@ def save_sim_data(
 						} for x in passage.words(alphabetical_only=False)
 					]
 				)
-				# fix_df.to_csv(f"{savedir}/fixations_{fname}.csv")
 				fix_df.to_csv(f"{savedir}/{fname}_fixations.csv")
 				
 				with open(f"{savedir}/{fname}_trial.json",'w') as f:
@@ -345,21 +347,13 @@ def save_sim_data(
 
 if __name__ == '__main__':
 
-	# import argparse
-	# parser = argparse.ArgumentParser()
-	# parser.add_argument('factor', action='store', type=str, help='factor to simulate')
-	# parser.add_argument('output_dir', action='store', type=str, help='directory to write results to')
-	# parser.add_argument('--n_gradations', action='store', type=int, default=50, help='number of gradations in factor')
-	# parser.add_argument('--n_sims', action='store', type=int, default=100, help='number of simulations per gradation')
-	# args = parser.parse_args()
-
-	factor = "all_noLineBreaks_alwaysNoise_wikitext"
+	factor = "all_noLineBreaks_shortSent_alwaysNoise_wikitext"
 	n_gradations = 4
-	n_sims = 25
+	n_sims = 20
 	lines_per_passage = (12,14)
 	include_line_breaks = False
 	always_apply_small_noise = True
-	drive = ["/media/fssd","F:/","../.."][0]
+	drive = ["/media/fssd","F:/","../.."][1]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
 	text_source = f"{drive}/pydata/Text_Data_General/wikitext-2/wiki.train.tokens"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
@@ -375,13 +369,16 @@ if __name__ == '__main__':
 	# factors_available = [factor]
 	print(f"Running factors {factors_available}")
 
-	with open(text_source,"r") as f:
+	with open(text_source,"r",encoding="utf-8") as f:
 		text = f.read()
 	texts = text.split("\n \n ")
 	texts = [x.replace(" .",".").replace("<unk>","").replace("\n","").replace("@-@ ","-").replace("@.@ ",".").replace("@,@ ",",") for x in texts if len(x)>100 and "= =" not in x and "Note :" not in x]
 	texts = [x.encode('ascii',errors='ignore').decode() for x in texts]
-	# txt_indeces = np.arange(len(texts))
-	# np.random.shuffle(txt_indeces)
+	texts = [x.replace(" .",".").replace(" ,",",").replace(" )",")").replace(" (","(").replace(" :",":").replace(" ;",";").replace(" '","'").replace(' "','"') for x in texts]
+	texts = [x.replace("( ","(").replace("  "," ").replace("' ","'").replace('"','" ').replace(" ]","]").replace(" [","[").replace("' ","'").replace('" ','"') for x in texts]
+	texts = [x.replace("$ ","$").replace(" ?","?").replace(" !","!").replace(" ,",",") for x in texts]
+	np.random.seed(42)
+	np.random.shuffle(texts)
 	text_num = 0
 	if do_save_sim_data:
 		for factor2_idx,_ in tqdm(enumerate(factors_available),desc="outer"):
