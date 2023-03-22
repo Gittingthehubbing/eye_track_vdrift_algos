@@ -15,6 +15,7 @@ import os
 import pathlib as pl
 import json
 from PIL import Image
+import add_fonts
 
 FACTORS = {'noise':('Noise distortion', (0, 40)),
            'slope':('Slope distortion', (-0.1, 0.1)),
@@ -82,9 +83,9 @@ class ReadingScenario:
 				# since it cannot create sequences with one fixation.
 				w = words[np.random.randint(1,len(words)+1)]
 				lines[-1] = f'{w} ' + lines[-1]
-		font_size=round(26.667+(5*(1-np.random.rand())))
-		line_height=round(64.0+(10*(1-np.random.rand())))
-		return eyekit.TextBlock(lines, position=(font_size, font_size), font_face='Courier New', font_size=font_size, line_height=line_height,anchor="left")
+		font_size=round(self.text_gen_cfg["base_font_size"]+(self.text_gen_cfg["font_size_range"]*(1-np.random.rand())))
+		line_height=round(self.text_gen_cfg["base_line_height"]+(self.text_gen_cfg["line_height_range"]*(1-np.random.rand())))
+		return eyekit.TextBlock(lines, position=(font_size, font_size), font_face=self.text_gen_cfg["font_face"], font_size=font_size, line_height=line_height,anchor="left")
 
 	def _generate_line_sequence(self, passage, line_i, partial_reading=False, inherited_line_y_for_shift=None):
 		x_margin, y_margin = passage.x_tl, passage.y_tl
@@ -295,7 +296,56 @@ def save_sim_data(
 
 				if do_eyekit_plot:
 					eyekit_plot(fix_df,passage,pl.Path(output_dir).parent.joinpath("plots").joinpath(f"eyekitPlot_{fname}"))
+				unique_midlines = passage.midlines
+				words_list= [
+					{
+						"word_xmin" : x.x_tl,
+						"word_ymin" : x.y_tl,
+						"word_xmax" : x.x_br,
+						"word_ymax" : x.y_br,
+						"word_x_center" : x.x,
+						"word_y_center" : x.y,
+						"word":x.display_text,
+						"assigned_line": passage.midlines.index(x.y)
+					} for x in passage.words(alphabetical_only=False)
+				]
 
+				chars_list = []
+				for word in words_list:
+					letter_width =(word["word_xmax"] - word["word_xmin"])/ (len(word["word"])+1)
+					for i_w, letter in enumerate(word["word"]):
+						xmin = round(word["word_xmin"] + i_w * letter_width,2)
+						xmax = round(word["word_xmin"]+ (i_w+1) * letter_width,2)
+						if xmax > word["word_xmax"]:
+							xmax = round(word["word_xmax"],2)
+						char_dict = dict(
+							char_xmin = xmin,
+							char_xmax = xmax,
+							char_ymin = word["word_ymin"],
+							char_ymax = word["word_ymax"],
+							char = letter,
+						)
+						
+						char_dict["char_x_center"] = (char_dict["char_xmax"] - char_dict["char_xmin"])/2 + char_dict["char_xmin"]
+						char_dict["char_y_center"] = (word["word_ymin"] - word["word_ymax"])/2 + word["word_ymax"]
+
+						if i_w >= len(word["word"])+1:
+							break
+						char_dict["assigned_line"] = unique_midlines.index(char_dict["char_y_center"])
+						chars_list.append(char_dict)
+
+				chars_list_eyekit= [
+					{
+						"char_xmin" : x.x_tl,
+						"char_ymin" : x.y_tl,
+						"char_xmax" : x.x_br,
+						"char_ymax" : x.y_br,
+						"char_x_center" : x.x,
+						"char_y_center" : x.y,
+						"char":x.display_text,
+						"assigned_line": passage.midlines.index(x.y)
+					} for x in passage.characters(alphabetical_only=False)
+				],
 				trial = dict(
 					filename = str(fname),
 					y_midline = passage.midlines,
@@ -308,31 +358,11 @@ def save_sim_data(
 					font_size = passage.font_size,
 					font= passage.font_face,
 					line_heights = passage.line_height,
-					chars_list= [
-						{
-							"char_xmin" : x.x_tl,
-							"char_ymin" : x.y_tl,
-							"char_xmax" : x.x_br,
-							"char_ymax" : x.y_br,
-							"char_x_center" : x.x,
-							"char_y_center" : x.y,
-							"char":x.display_text,
-							"assigned_line": passage.midlines.index(x.y)
-						} for x in passage.characters(alphabetical_only=False)
-					],
-					words_list= [
-						{
-							"word_xmin" : x.x_tl,
-							"word_ymin" : x.y_tl,
-							"word_xmax" : x.x_br,
-							"word_ymax" : x.y_br,
-							"word_x_center" : x.x,
-							"word_y_center" : x.y,
-							"word":x.display_text,
-							"assigned_line": passage.midlines.index(x.y)
-						} for x in passage.words(alphabetical_only=False)
-					]
+					words_list=words_list,
+					chars_list=chars_list,
 				)
+
+				
 				fix_df.to_csv(f"{savedir}/{fname}_fixations.csv")
 				
 				with open(f"{savedir}/{fname}_trial.json",'w') as f:
@@ -351,11 +381,12 @@ def save_sim_data(
 if __name__ == '__main__':
 
 	factor = [
+		"all_noLineBreaks_alwaysNoise_wikitext",
 		"all_noLineBreaks_shortSent_alwaysNoise_wikitext",
 		"all_noLineBreaks_shortSentEverytrial_alwaysNoise_wikitext"
 	][1]
 	n_gradations = 4
-	n_sims = 20
+	n_sims = 10
 	lines_per_passage = (12,14)
 	include_line_breaks = False
 	always_apply_small_noise = True
@@ -371,8 +402,13 @@ if __name__ == '__main__':
 	factors_available = list(FACTORS.keys())
 
 	text_gen_cfg = dict(
-		short_sentence_in_trial_probability = 1.0, #was 0.25
+		short_sentence_in_trial_probability = 0.25, #was 0.25
 		short_sentence_break_after_word_probability = 0.01,
+		base_font_size=25, #was 26.667
+		font_size_range=10, #was 5
+		base_line_height = 64, #was 64
+		line_height_range=15, # was 10
+		font_face = "Consola Mono", # was Courier New
 	)
 
 	print(f"Factors available {factors_available}")
