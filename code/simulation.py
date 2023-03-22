@@ -25,7 +25,7 @@ ALGORITHMS = ['attach', 'chain', 'cluster', 'compare', 'merge', 'regress', 'segm
 
 class ReadingScenario:
 
-	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64,include_line_breaks=False,text:str=None):
+	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64,include_line_breaks=False,text:str=None,text_gen_cfg:dict=None):
 		# Distortion parameters
 		self.noise = noise
 		self.slope = slope
@@ -39,6 +39,7 @@ class ReadingScenario:
 		self.character_spacing = character_spacing
 		self.line_spacing = line_spacing
 		self.include_line_breaks = include_line_breaks
+		self.text_gen_cfg = text_gen_cfg
 		if text is not None:
 			self.text = text
 
@@ -46,7 +47,7 @@ class ReadingScenario:
 		n_lines = np.random.randint(self.min_lines, self.max_lines+1)
 		lines = ['']
 		has_paragraph_gap = False
-		add_short_sentences = True if np.random.rand() < 0.25 else False
+		add_short_sentences = True if np.random.rand() < self.text_gen_cfg["short_sentence_in_trial_probability"] else False
 		while len(lines) < n_lines:
 			# for word in lorem.sentence().split():
 			if self.text is None:
@@ -57,7 +58,7 @@ class ReadingScenario:
 			for word in words:
 				if len(lines) > n_lines:
 					break
-				if add_short_sentences and len(lines[-1]) > 0 and np.random.rand() < 0.01:
+				if add_short_sentences and len(lines[-1]) > 0 and np.random.rand() < self.text_gen_cfg["short_sentence_break_after_word_probability"] :
 					lines.append(word + ' ')
 				elif (len(lines[-1]) + len(word)) <= self.max_characters_per_line:
 					lines[-1] += word + ' '
@@ -206,7 +207,8 @@ def save_sim_data(
 		max_num_fixations=500,
 		do_eyekit_plot=False,
 		texts:str=None,
-		text_num=0
+		text_num=0,
+		text_gen_cfg:dict=None
 ):
 	os.makedirs("data/saved_data",exist_ok=True)
 	_, (factor1_min, factor1_max) = FACTORS[factor1]
@@ -253,7 +255,8 @@ def save_sim_data(
 				character_spacing=character_spacing_choice,
 				line_spacing=line_spacing_choice,
 				include_line_breaks=include_line_breaks,
-				text=texts[text_num]
+				text=texts[text_num],
+				text_gen_cfg=text_gen_cfg,
 			)
 			try:
 				passage, fixation_XY, intended_I = reading_scenario.simulate()
@@ -347,13 +350,16 @@ def save_sim_data(
 
 if __name__ == '__main__':
 
-	factor = "all_noLineBreaks_shortSent_alwaysNoise_wikitext"
+	factor = [
+		"all_noLineBreaks_shortSent_alwaysNoise_wikitext",
+		"all_noLineBreaks_shortSentEverytrial_alwaysNoise_wikitext"
+	][1]
 	n_gradations = 4
 	n_sims = 20
 	lines_per_passage = (12,14)
 	include_line_breaks = False
 	always_apply_small_noise = True
-	drive = ["/media/fssd","F:/","../.."][1]
+	drive = ["/media/fssd","F:/","../.."][0]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
 	text_source = f"{drive}/pydata/Text_Data_General/wikitext-2/wiki.train.tokens"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
@@ -363,6 +369,12 @@ if __name__ == '__main__':
 	do_eyekit_plot = False
 	do_sim_correction = False
 	factors_available = list(FACTORS.keys())
+
+	text_gen_cfg = dict(
+		short_sentence_in_trial_probability = 1.0, #was 0.25
+		short_sentence_break_after_word_probability = 0.01,
+	)
+
 	print(f"Factors available {factors_available}")
 	#['noise', 'slope', 'shift', 'regression_within', 'regression_between']
 	factors_available.remove("slope")
@@ -401,7 +413,8 @@ if __name__ == '__main__':
 					always_apply_small_noise=always_apply_small_noise,
 					texts=texts,
 					do_eyekit_plot=do_eyekit_plot,
-					text_num=text_num
+					text_num=text_num,
+					text_gen_cfg=text_gen_cfg
 				)
 
 	if do_sim_correction:
