@@ -81,7 +81,7 @@ class ReadingScenario:
 				# Final line only contains one word, so add in an extra word
 				# because a one-word final line can be problematic for merge
 				# since it cannot create sequences with one fixation.
-				w = words[np.random.randint(1,len(words)+1)]
+				w = words[-1] #np.random.randint(1,len(words)+1)
 				lines[-1] = f'{w} ' + lines[-1]
 		font_size=round(self.text_gen_cfg["base_font_size"]+(self.text_gen_cfg["font_size_range"]*(1-np.random.rand())))
 		line_height=round(self.text_gen_cfg["base_line_height"]+(self.text_gen_cfg["line_height_range"]*(1-np.random.rand())))
@@ -127,7 +127,7 @@ class ReadingScenario:
 			X.extend(line_X)
 			Y.extend(line_Y)
 			intended_I.extend(line_I)
-			if line_i > 0 and np.random.random() < self.regression_between:
+			if line_i > 0 and np.random.random() < self.regression_between and len(line_X)>1:
 				rand_prev_line = int(np.random.triangular(0, line_i, line_i))
 				rand_insert_point = np.random.randint(1, len(line_X))
 				regression = self._generate_line_sequence(passage, rand_prev_line, partial_reading=True, inherited_line_y_for_shift=line_y)
@@ -386,7 +386,7 @@ if __name__ == '__main__':
 		"all_noLineBreaks_shortSentEverytrial_alwaysNoise_wikitext"
 	][1]
 	n_gradations = 4
-	n_sims = 10
+	n_sims = 20
 	lines_per_passage = (12,14)
 	include_line_breaks = False
 	always_apply_small_noise = True
