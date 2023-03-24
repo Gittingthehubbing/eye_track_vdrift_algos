@@ -104,12 +104,15 @@ class ReadingScenario:
 				x_word_center = word.center[0]
 				if x_word_center < start_point or x_word_center > end_point:
 					continue
-				x_value = int(np.random.triangular(word[0].x, x_word_center, word[-1].x+1))
+				if len(word) == 1:
+					x_value = int(word[0].x + (np.random.rand(1)- 0.5)*2)
+				else:
+					x_value = int(np.random.triangular(word[0].x, x_word_center, word[-1].x+1))
 				line_X.append(x_value)
 				if word_i > 0 and np.random.random() < self.regression_within:
 					x_regression = int(np.random.triangular(x_margin, word[0].x+1, word[0].x+1))
 					line_X.append(x_regression)
-		line_X = np.array(line_X, dtype=int) - x_margin
+		line_X = np.array(line_X) - x_margin
 		line_y = passage.midlines[line_i] - y_margin
 		line_Y = np.random.normal(line_y, self.noise, len(line_X))
 		line_Y += line_X * self.slope
@@ -390,7 +393,7 @@ if __name__ == '__main__':
 	lines_per_passage = (12,14)
 	include_line_breaks = False
 	always_apply_small_noise = True
-	drive = ["/media/fssd","F:/","../.."][0]
+	drive = ["/media/fssd","F:/","../.."][-1]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
 	text_source = f"{drive}/pydata/Text_Data_General/wikitext-2/wiki.train.tokens"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
