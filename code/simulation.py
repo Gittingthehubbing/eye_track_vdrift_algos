@@ -386,14 +386,16 @@ if __name__ == '__main__':
 	factor = [
 		"all_noLineBreaks_alwaysNoise_wikitext",
 		"all_noLineBreaks_shortSent_alwaysNoise_wikitext",
-		"all_noLineBreaks_shortSentEverytrial_alwaysNoise_wikitext"
-	][1]
+		"all_noLineBreaks_shortSentEverytrial_alwaysNoise_wikitext",
+		"all_noLineBreaks_shortSent_withGaps_alwaysNoise_wikitext",
+	][3]
 	n_gradations = 4
 	n_sims = 20
-	lines_per_passage = (12,14)
-	include_line_breaks = False
+	lines_per_passage = (8,14) #(12,14)
+	max_characters_per_line = (50,130)
+	include_line_breaks = True
 	always_apply_small_noise = True
-	drive = ["/media/fssd","F:/","../.."][-1]
+	drive = ["/media/fssd","F:/","../.."][0]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
 	text_source = f"{drive}/pydata/Text_Data_General/wikitext-2/wiki.train.tokens"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
@@ -448,6 +450,7 @@ if __name__ == '__main__':
 					n_sims,
 					savedir=output_dir,
 					lines_per_passage=lines_per_passage,
+					max_characters_per_line=max_characters_per_line,
 					include_line_breaks=include_line_breaks,
 					always_apply_small_noise=always_apply_small_noise,
 					texts=texts,
