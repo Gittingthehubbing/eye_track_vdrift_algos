@@ -17,16 +17,18 @@ import json
 from PIL import Image
 import add_fonts
 
-FACTORS = {'noise':('Noise distortion', (0, 40)),
+FACTORS = {
+           'regression_within':('Probability of within-line regression', (0, 1)),
+           'regression_between':('Probability of between-line regression', (0, 1)),
+		   'noise':('Noise distortion', (0, 40)),
            'slope':('Slope distortion', (-0.1, 0.1)),
            'shift':('Shift distortion', (-0.2, 0.2)),
-           'regression_within':('Probability of within-line regression', (0, 1)),
-           'regression_between':('Probability of between-line regression', (0, 1))}
+		   }
 ALGORITHMS = ['attach', 'chain', 'cluster', 'compare', 'merge', 'regress', 'segment', 'slice', 'split', 'stretch', 'warp']
 
 class ReadingScenario:
 
-	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16, line_spacing=64,include_line_breaks=False,text:str=None,text_gen_cfg:dict=None):
+	def __init__(self, noise=0, slope=0, shift=0, regression_within=0, regression_between=0, lines_per_passage=(8, 12), max_characters_per_line=80, character_spacing=16,include_line_breaks=False,text:str=None,text_gen_cfg:dict=None):
 		# Distortion parameters
 		self.noise = noise
 		self.slope = slope
@@ -38,7 +40,6 @@ class ReadingScenario:
 		self.min_lines, self.max_lines = lines_per_passage
 		self.max_characters_per_line = max_characters_per_line
 		self.character_spacing = character_spacing
-		self.line_spacing = line_spacing
 		self.include_line_breaks = include_line_breaks
 		self.text_gen_cfg = text_gen_cfg
 		if text is not None:
@@ -105,7 +106,7 @@ class ReadingScenario:
 				if x_word_center < start_point or x_word_center > end_point:
 					continue
 				if len(word) == 1:
-					x_value = int(word[0].x + (np.random.rand(1)- 0.5)*2)
+					x_value = int(word[0].x + (np.random.rand(1)[0] - 0.5)*2)
 				else:
 					x_value = int(np.random.triangular(word[0].x, x_word_center, word[-1].x+1))
 				line_X.append(x_value)
@@ -205,7 +206,6 @@ def save_sim_data(
 		lines_per_passage=(8, 14), 
 		max_characters_per_line=(50,130), 
 		character_spacing=(10,18), 
-		line_spacing=(15,130),
 		include_line_breaks=False,
 		always_apply_small_noise=False,
 		max_num_fixations=500,
@@ -217,9 +217,6 @@ def save_sim_data(
 	os.makedirs("data/saved_data",exist_ok=True)
 	_, (factor1_min, factor1_max) = FACTORS[factor1]
 	_, (factor2_min, factor2_max) = FACTORS[factor2]
-	# max_characters_per_line_choices = np.arange(max_characters_per_line[0],max_characters_per_line[1],1)
-	# character_spacing_choices = np.arange(character_spacing[0],character_spacing[1],1)
-	# line_spacing_choices = np.arange(line_spacing[0],line_spacing[1],1)
 	enum1 = np.linspace(factor2_min,factor2_max,num_sims)
 	enum2 = np.linspace(factor1_min,factor1_max,num_sims)
 	if factor1 == factor2:
@@ -239,13 +236,12 @@ def save_sim_data(
 		for factor_value1 in enum2:
 			max_characters_per_line_choice = np.random.randint(max_characters_per_line[0],max_characters_per_line[1])
 			character_spacing_choice = np.random.randint(character_spacing[0],character_spacing[1])
-			line_spacing_choice = np.random.randint(line_spacing[0],line_spacing[1])
 
 			if factor2 == '':
-				fname = f"{factor1}_{factor_value1:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
+				fname = f"{factor1}_{factor_value1:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}"
 				factor_dict = {factor1:factor_value1}
 			else:
-				fname = f"{factor1}_{factor_value1:.3f}{factor2}_{factor_value2:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}_lS{line_spacing_choice}"
+				fname = f"{factor1}_{factor_value1:.3f}{factor2}_{factor_value2:.3f}_cs{max_characters_per_line_choice}_cSp{character_spacing_choice}"
 				factor_dict = {factor1:factor_value1,factor2:factor_value2}
 			if always_apply_small_noise and 'noise' not in factor_dict:
 				factor_dict['noise'] = 6
@@ -257,14 +253,13 @@ def save_sim_data(
 				lines_per_passage=lines_per_passage,
 				max_characters_per_line=max_characters_per_line_choice,
 				character_spacing=character_spacing_choice,
-				line_spacing=line_spacing_choice,
 				include_line_breaks=include_line_breaks,
 				text=texts[text_num],
 				text_gen_cfg=text_gen_cfg,
 			)
 			try:
 				passage, fixation_XY, intended_I = reading_scenario.simulate()
-				if len(fixation_XY)>max_num_fixations:
+				if fixation_XY.shape[0] > max_num_fixations:
 					continue
 				average_duration = 80.0
 				fixation_times = []
@@ -283,7 +278,7 @@ def save_sim_data(
 				corrected_line_nums = [passage.midlines.index(y) for y in corrected_fix_y_vals]
 
 				pupil_sizes = pd.DataFrame([dict(pupil_size=np.random.randn()) for _ in range(len(fixation_XY))])
-				pupil_sizes = pupil_sizes.applymap(lambda x: round(abs(x) * 721.0,2)) 
+				pupil_sizes = pupil_sizes.map(lambda x: round(abs(x) * 721.0,2)) 
 				fix_df = pd.DataFrame([{
 					"x":fixation_XY[idx][0],
 					"y":fixation_XY[idx][1],
@@ -292,7 +287,6 @@ def save_sim_data(
 					"corrected_start_time":fixation_times.start.values[idx],
 					"corrected_end_time":fixation_times.end.values[idx],
 					"pupil_size":pupil_sizes.pupil_size.values[idx],
-					"x_eyekit":fixation_XY[idx][0],
 					"y_eyekit":corrected_fix_y_vals[idx],
 					"line_num_eyekit":corrected_line_nums[idx],
 				} for idx in range(len(fixation_XY))])
@@ -393,9 +387,9 @@ if __name__ == '__main__':
 	n_sims = 20
 	lines_per_passage = (8,14) #(12,14)
 	max_characters_per_line = (50,130)
-	include_line_breaks = True
+	include_line_breaks = False
 	always_apply_small_noise = True
-	drive = ["/media/fssd","F:/","../.."][0]
+	drive = ["/media/fssd","F:/","../..","/media/ubulappi/Extreme SSD/all","H:/all"][-1]
 	output_dir = f"{drive}/pydata/Eye_Tracking/Sim_{factor}/processed_data"
 	text_source = f"{drive}/pydata/Text_Data_General/wikitext-2/wiki.train.tokens"
 	pl.Path(output_dir).parent.mkdir(exist_ok=True)
